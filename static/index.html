@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bingo World - 逼果游戏</title>
+    <style>
+        .textarea-container {
+            display: flex;
+            align-items: stretch; /* Align items to stretch for full height */
+            border: 1px solid #ccc;
+            width: 350px; /* Adjust width as needed */
+        }
+        #line-numbers {
+            width: 30px;
+            background-color: #f0f0f0;
+            text-align: right;
+            padding-right: 5px;
+            user-select: none;
+            line-height: 1; /* Ensure same line-height */
+            padding-top: 2px;
+            font-family: monospace;
+            font-size: 14px;
+            overflow: hidden;
+            color: #555;
+            border-right: 1px solid #ccc; /* Add a border to separate from textarea */
+            margin: 0;
+            height: 385px; /* Set height to match 25 lines */
+        }
+        #items {
+            border: none;
+            outline: none;
+            width: 100%;
+            height: 385px;
+            line-height: 1; /* Match line-height */
+            resize: none;
+            font-family: monospace;
+            font-size: 14px;
+            padding: 2px; /* Adjust padding for perfect alignment */
+            margin: 0; /* No margin */
+            box-sizing: border-box; /* Include padding in width/height */
+            overflow-y: hidden; /* Hide vertical scroll */
+        }
+        table {
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        td {
+            width: 80px;
+            height: 80px;
+            border: 1px solid #000;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            user-select: none;
+        }
+        .selected {
+            background-color: green;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Play Bingo</h1>
+    <div id="gameLink"></div>
+    <button id="copyButton" onclick="copyLink()">Copy Link</button>
+    <div id="gameResult"></div>
+    <!--button id="shareButton" style="display:none;" onclick="shareSelections()">Share</button-->
+
+    <h1>Create Bingo</h1>
+    <form id="bingoForm">
+        <div>
+            <label for="theme">Bingo Theme:</label>
+            <input type="text" id="theme" name="theme" maxlength="50"> <!-- Limit to 50 characters -->
+        </div>
+        <div>
+            <label for="items">Enter Bingo Items (one per line, 25 items):</label>
+            <div class="textarea-container">
+                <pre id="line-numbers">1.</pre>
+                <textarea id="items" name="items" rows="25" cols="30" required placeholder="Enter one item per line" oninput="updateLineNumbers()"></textarea>
+            </div>
+        </div>
+        <div>
+            <label for="author">Author Name (optional):</label>
+            <input type="text" id="author" name="author" placeholder="Your name (optional)" maxlength="50"> <!-- Limit to 50 characters -->>
+        </div>
+        <button type="submit">Create!</button>
+    </form>
+
+    <script>
+        // Function to submit the bingo form and handle JSON response
+        document.getElementById('bingoForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const theme = document.getElementById('theme').value;
+            const items = document.getElementById('items').value;
+            const author = document.getElementById('author').value;
+
+            // Check if each item is within the character limit
+            const itemsArray = items.split('\n');
+            const maxItemLength = 30; // Maximum length for each bingo item
+            if (itemsArray.some(item => item.length > maxItemLength)) {
+                alert(`Please ensure each item is no longer than ${maxItemLength} characters.`);
+                return;
+            }
+            
+            fetch('/api/submit-your-bingo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ theme, items, author })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const linkUrl = `${window.location.origin}/?game_id=${data.game_id}`;
+                const gameLink = document.getElementById('gameLink');
+                gameLink.innerHTML = `Game created! <a href="${linkUrl}" onclick="loadGame(event, ${data.game_id})">Click here to play</a>`;
+                gameLink.style.display = 'block';
+
+                const copyButton = document.getElementById('copyButton');
+                copyButton.style.display = 'inline-block';
+                // Store the link URL for copying
+                copyButton.setAttribute('data-link', linkUrl);
+                navigator.clipboard.writeText(linkUrl);
+            })
+            .then(() => {
+                alert('Game created! Link copied to clipboard!');
+            })
+            .catch(error => console.error('Error:', error));
+        });
+
+        // Function to update line numbers
+        function updateLineNumbers() {
+            var items = document.getElementById('items');
+            var lineNumbers = document.getElementById('line-numbers');
+            var count = items.value.split('\n').length;
+            var numbers = '';
+            for (var i = 1; i <= count; i++) {
+                numbers += i + '.\n';
+            }
+            lineNumbers.textContent = numbers;
+        }
+
+        function loadGame(event, gameId) {
+            if (event) {
+                event.preventDefault();
+            }
+            fetch(`/api/game/${gameId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const gameResult = document.getElementById('gameResult');
+                    if (data.error) {
+                        gameResult.innerHTML = data.error;
+                    } else {
+                        const { theme, items, author } = data;
+                        let html = `<h3>Theme: ${theme}</h3><p>Author: ${author}</p><table>`;
+                        items.forEach((item, index) => {
+                            html += `<td onclick="toggleSelection(this)">${item}</td>`;
+                            if ((index + 1) % 5 === 0) {
+                                html += '</tr><tr>';
+                            }
+                        });
+                        html += '</tr></table>';
+                        gameResult.innerHTML = html;
+                        document.getElementById('shareButton').style.display = 'block';
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            const linkUrl = `${window.location.origin}/?game_id=${gameId}`;
+            const copyButton = document.getElementById('copyButton');
+            copyButton.style.display = 'inline-block';
+            // Store the link URL for copying
+            copyButton.setAttribute('data-link', linkUrl);
+        }
+
+        function toggleSelection(cell) {
+            cell.classList.toggle('selected');
+        }
+
+        function shareSelections() {
+            const selectedItems = [];
+            document.querySelectorAll('#gameResult td').forEach((cell, index) => {
+                if (cell.classList.contains('selected')) {
+                    selectedItems.push(index);
+                }
+            });
+
+            const gameId = document.getElementById('gameIdInput').value;
+            fetch('/share-bingo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ game_id: gameId, selected_items: selectedItems })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.image_url) {
+                    alert('Bingo card image generated! URL: ' + data.image_url);
+                } else {
+                    alert('Error generating image.');
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function copyLink() {
+            const copyButton = document.getElementById('copyButton');
+            const link = copyButton.getAttribute('data-link');
+            navigator.clipboard.writeText(link).then(() => {
+                alert('Link copied to clipboard!');
+            }).catch(err => {
+                console.error('Could not copy text: ', err);
+            });
+        }
+
+        // Initialize line numbers on page load
+        window.onload = function() {
+            updateLineNumbers();
+
+            // Check if a game_id is present in the URL and load the game automatically
+            const urlParams = new URLSearchParams(window.location.search);
+            const gameId = urlParams.get('game_id');
+            if (gameId) {
+                loadGame(null, gameId);
+            }
+        };
+    </script>
+</body>
+</html>
