@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Play Bingo Game</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        td {
+            width: 80px;
+            height: 80px;
+            border: 1px solid #000;
+            text-align: center;
+            vertical-align: middle;
+            cursor: pointer;
+            user-select: none;
+        }
+        .selected {
+            background-color: green;
+            color: white;
+        }
+
+        /* Style for the modal container */
+        #modal {
+            display: none;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+            overflow: auto; /* Allows scrolling within the modal if content overflows */
+        }
+
+        /* Style for the modal content box */
+        .modal-content {
+            background: white;
+            padding: 20px;
+            width: auto; /* Adjust width based on the content */
+            max-width: 95%; /* Limits the width to avoid touching the viewport edges */
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Centers the content horizontally */
+        }
+
+        /* Image style within the modal */
+        #generatedImage {
+            max-width: 100%; /* Ensures the image does not exceed the width of the modal-content */
+            max-height: 80vh; /* Limits the height to maintain visibility on the screen */
+            display: block;
+            margin-bottom: 20px; /* Adds some space below the image */
+        }
+    </style>
+</head>
+<body>
+    <div id="gameTitle"></div>
+    <div id="gameDescription"></div>
+    <div id="gameResult"></div>
+    <!-- Button to submit selections -->
+    <button id="submitButton" onclick="shareSelections()">选好了</button>
+    <!-- Modal for displaying the generated image -->
+    <div id="modal">
+        <div class="modal-content">
+            <button onclick="closeModal()">关闭弹出窗口儿</button>
+            <p>结果已生成，赶紧保存图片儿然后转发给别人儿！</p>
+            <img id="generatedImage" src="" alt="Generated Bingo Card">
+        </div>
+    </div>
+
+    <!-- Add a button to navigate to the Create page -->
+    <p><button onclick="window.location.href='/create.html'">我也要做一个</button></p>
+
+    <!-- Add this section at the bottom of the play.html file -->
+    <h2>玩点别的？</h2>
+    <div id="popularGames"></div>
+
+    <script>
+        function loadGame(gameId) {
+            fetch(`/api/game/${gameId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const gameTitle = document.getElementById('gameTitle');
+                    const gameDescription = document.getElementById('gameDescription');
+                    const gameResult = document.getElementById('gameResult');
+
+                    if (data.error) {
+                        gameTitle.innerHTML = data.error;
+                        gameDescription.innerHTML = '';
+                        gameResult.innerHTML = '';
+                    } else {
+                        const { title, describe, shape, content, author } = data;
+                        gameTitle.innerHTML = `<h2>${title}宾果图</h2>`;
+                        gameDescription.innerHTML = `<p>连成一条线你就是${describe}</p>`;
+
+                        let html = '<table>';
+                        for (let row = 0; row < shape; row++) {
+                            html += '<tr>';
+                            for (let col = 0; col < shape; col++) {
+                                const index = row * shape + col;
+                                html += `<td onclick="toggleSelection(this)">${content[index]}</td>`;
+                            }
+                            html += '</tr>';
+                        }
+                        html += `</table><p>作者：${author}</p>`;
+                        gameResult.innerHTML = html;
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function toggleSelection(cell) {
+            cell.classList.toggle('selected');
+        }
+
+        // Function to load popular games
+        function loadPopularGames() {
+            fetch('/api/popular-games') // Endpoint to get popular games
+                .then(response => response.json())
+                .then(data => {
+                    const popularGamesContainer = document.getElementById('popularGames');
+                    if (data.error) {
+                        popularGamesContainer.innerHTML = `<p>${data.error}</p>`;
+                    } else {
+                        const gamesHtml = data.map(game => 
+                            `<a href="/play.html?game_id=${game.game_id}">${game.title}宾果图</a>`
+                        ).join('<br>');
+                        popularGamesContainer.innerHTML = gamesHtml;
+                    }
+                })
+                .catch(error => console.error('Error loading popular games:', error));
+        }
+
+        function shareSelections() {
+            const selectedItems = [];
+            document.querySelectorAll('#gameResult td').forEach((cell, index) => {
+                if (cell.classList.contains('selected')) {
+                    selectedItems.push(index);
+                }
+            });
+
+            const gameId = new URLSearchParams(window.location.search).get('game_id');
+            fetch('/api/get-result', {
+                method: 'POST',
+                // headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                // body: JSON.stringify({ game_id: gameId, selections: selectedItems })
+                body: new URLSearchParams({ game_id: gameId, selections: selectedItems })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.image_url) {
+                    showImage(data.image_url); // Calls the function to update the image src and display it
+                } else {
+                    alert('Error generating image.');
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function openModal() {
+            document.getElementById('modal').style.display = 'flex'; // Shows the modal with flex to center the content
+        }
+
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none'; // Hides the modal
+        }
+
+        function showImage(imageUrl) {
+            const imageElement = document.getElementById('generatedImage');
+            imageElement.src = imageUrl;
+            openModal(); // Opens the modal with the image
+        }
+
+        // Call this function after loading the current game
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const gameId = urlParams.get('game_id');
+            if (gameId) {
+                loadGame(gameId);
+            }
+            loadPopularGames(); // Load popular games
+        };
+    </script>
+</body>
+</html>
